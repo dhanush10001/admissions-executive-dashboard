@@ -395,6 +395,9 @@ export interface Applicant360 {
   feePaid: "Yes" | "No";
   amount: string;
   enrolled: "Yes" | "No";
+  institution: string;
+  university: string;
+  campus: string;
 }
 
 export const MOCK_APPLICANTS_360: Applicant360[] = [
@@ -408,6 +411,9 @@ export const MOCK_APPLICANTS_360: Applicant360[] = [
     feePaid: "Yes",
     amount: "₹550,000",
     enrolled: "Yes",
+    institution: "Global Education Group",
+    university: "Bharath Institute",
+    campus: "Bengaluru",
   },
   {
     id: "APP-10292",
@@ -419,6 +425,9 @@ export const MOCK_APPLICANTS_360: Applicant360[] = [
     feePaid: "Yes",
     amount: "₹50,000",
     enrolled: "No",
+    institution: "North India University",
+    university: "VIT Higher Learning",
+    campus: "Mangalore",
   },
   {
     id: "APP-10293",
@@ -430,6 +439,9 @@ export const MOCK_APPLICANTS_360: Applicant360[] = [
     feePaid: "Yes",
     amount: "₹50,000",
     enrolled: "No",
+    institution: "Global Education Group",
+    university: "Bharath Institute",
+    campus: "Mysuru",
   },
   {
     id: "APP-10294",
@@ -441,6 +453,9 @@ export const MOCK_APPLICANTS_360: Applicant360[] = [
     feePaid: "Yes",
     amount: "₹50,000",
     enrolled: "No",
+    institution: "Southern Excellence Institute",
+    university: "SRM Academic Network",
+    campus: "Chennai",
   },
   {
     id: "APP-10295",
@@ -452,6 +467,9 @@ export const MOCK_APPLICANTS_360: Applicant360[] = [
     feePaid: "Yes",
     amount: "₹550,000",
     enrolled: "Yes",
+    institution: "Global Education Group",
+    university: "VIT Higher Learning",
+    campus: "Bengaluru",
   },
   {
     id: "APP-10296",
@@ -463,6 +481,9 @@ export const MOCK_APPLICANTS_360: Applicant360[] = [
     feePaid: "Yes",
     amount: "₹50,000",
     enrolled: "No",
+    institution: "Southern Excellence Institute",
+    university: "Bharath Institute",
+    campus: "Mysuru",
   },
   {
     id: "APP-10297",
@@ -474,6 +495,9 @@ export const MOCK_APPLICANTS_360: Applicant360[] = [
     feePaid: "Yes",
     amount: "₹50,000",
     enrolled: "No",
+    institution: "North India University",
+    university: "SRM Academic Network",
+    campus: "Mangalore",
   },
   {
     id: "APP-10298",
@@ -485,6 +509,9 @@ export const MOCK_APPLICANTS_360: Applicant360[] = [
     feePaid: "Yes",
     amount: "₹550,000",
     enrolled: "Yes",
+    institution: "Global Education Group",
+    university: "Bharath Institute",
+    campus: "Chennai",
   },
 ];
 
@@ -567,6 +594,75 @@ export const PERSONAS: Persona[] = [
     accessDesc:
       "Personal seat availability, program details & application checklist",
     allowedTabs: ["overview", "programs"],
+  },
+];
+
+export const FILTER_OPTIONS = {
+  institution: [
+    "All Institutions",
+    "Global Education Group",
+    "North India University",
+    "Southern Excellence Institute",
+  ],
+  university: [
+    "All Universities",
+    "Bharath Institute",
+    "SRM Academic Network",
+    "VIT Higher Learning",
+  ],
+  campus: [
+    "All Campuses",
+    "Bengaluru",
+    "Mysuru",
+    "Mangalore",
+    "Chennai",
+  ],
+};
+
+export interface AlertItem {
+  id: number;
+  title: string;
+  message: string;
+  details: string;
+  severity: "high" | "medium" | "low";
+  time: string;
+  acknowledged: boolean;
+  actions: string[];
+}
+
+export const ALERT_ITEMS: AlertItem[] = [
+  {
+    id: 1,
+    title: "Verification backlog",
+    message: "142 documents require final certification before intake close.",
+    details:
+      "Seven verification cases are awaiting reviewer escalation across Bengaluru and Mysuru campuses. SLA risk remains moderate if not cleared within 48 hours.",
+    severity: "high",
+    time: "4 min ago",
+    acknowledged: false,
+    actions: ["Escalate", "Acknowledge", "Assign reviewer"],
+  },
+  {
+    id: 2,
+    title: "Capacity alert",
+    message: "Finance and Marketing are oversubscribed beyond target capacity.",
+    details:
+      "The current allocation exceeds target by 110% and 99%, respectively. Controlled waitlist and seat reallocation options are recommended.",
+    severity: "medium",
+    time: "18 min ago",
+    acknowledged: false,
+    actions: ["Review waitlist", "Share memo", "Escalate"],
+  },
+  {
+    id: 3,
+    title: "Fee follow-up",
+    message: "1,204 applicants have not completed application fees yet.",
+    details:
+      "The payment pipeline is active, but 8% of total applications are still outstanding. The main risk is conversion drift in the final stage.",
+    severity: "low",
+    time: "42 min ago",
+    acknowledged: true,
+    actions: ["Review report", "Send reminder"],
   },
 ];
 
@@ -819,13 +915,21 @@ export const KPI_DATA: Record<PersonaId, KPIItem[]> = {
 
 export default function App() {
   // Theme state
-  const [theme, setTheme] = useState<"light" | "dark">("dark");
+  const [theme, setTheme] = useState<"light" | "dark">("light");
   // Persona state
   const [activePersonaId, setActivePersonaId] = useState<PersonaId>("AD");
   // Persona dropdown toggle
   const [isPersonaMenuOpen, setIsPersonaMenuOpen] = useState<boolean>(false);
   // Active Tab state
   const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [selectedFilters, setSelectedFilters] = useState({
+    institution: "All Institutions",
+    university: "All Universities",
+    campus: "All Campuses",
+  });
+  const [isAlertsOpen, setIsAlertsOpen] = useState<boolean>(false);
+  const [expandedAlertId, setExpandedAlertId] = useState<number | null>(1);
+  const [alerts, setAlerts] = useState<AlertItem[]>(ALERT_ITEMS);
   // Trajectory range state
   const [trajectoryRange, setTrajectoryRange] = useState<"3M" | "6M" | "12M">(
     "12M",
@@ -851,6 +955,74 @@ export default function App() {
     [activePersonaId],
   );
 
+  const pendingAlertCount = alerts.filter((alert) => !alert.acknowledged).length;
+
+  const filterScale = useMemo(() => {
+    const institutionFactor =
+      selectedFilters.institution === "All Institutions"
+        ? 1
+        : selectedFilters.institution === "Global Education Group"
+          ? 1.08
+          : selectedFilters.institution === "North India University"
+            ? 0.92
+            : 1.04;
+
+    const universityFactor =
+      selectedFilters.university === "All Universities"
+        ? 1
+        : selectedFilters.university === "Bharath Institute"
+          ? 1.06
+          : selectedFilters.university === "SRM Academic Network"
+            ? 0.96
+            : 1.02;
+
+    const campusFactor =
+      selectedFilters.campus === "All Campuses"
+        ? 1
+        : selectedFilters.campus === "Bengaluru"
+          ? 1.08
+          : selectedFilters.campus === "Mysuru"
+            ? 0.96
+            : selectedFilters.campus === "Mangalore"
+              ? 0.93
+              : 1.02;
+
+    return institutionFactor * universityFactor * campusFactor;
+  }, [selectedFilters]);
+
+  const filteredKpiData = useMemo(() => {
+    return KPI_DATA[activePersonaId].map((item) => {
+      const numeric = Number.parseFloat(item.value.replace(/[^\d.]/g, ""));
+      if (Number.isNaN(numeric)) return item;
+
+      const scaledValue = numeric * filterScale;
+      const label = item.label.toLowerCase();
+
+      if (label.includes("applications") || label.includes("enrollments") || label.includes("managed") || label.includes("reviews") || label.includes("capacity") || label.includes("seats") || label.includes("students")) {
+        return {
+          ...item,
+          value: item.label.includes("Revenue")
+            ? `₹${Math.round(scaledValue)}M`
+            : item.label.includes("Enrollment Yield") || item.label.includes("Seat Utilization") || item.label.includes("Conversion") || item.label.includes("Yield") || item.label.includes("Utilization")
+              ? `${(numeric * filterScale).toFixed(1)}%`
+              : item.label.includes("Top Program") || item.label.includes("Program") || item.label.includes("Intake") || item.label.includes("Target") || item.label.includes("Status")
+                ? item.value
+                : new Intl.NumberFormat("en-IN").format(Math.round(scaledValue)),
+        };
+      }
+
+      if (item.label.includes("Revenue")) {
+        return { ...item, value: `₹${Math.round(scaledValue)}M` };
+      }
+
+      if (item.label.includes("Yield") || item.label.includes("Utilization") || item.label.includes("Conversion") || item.label.includes("Rate")) {
+        return { ...item, value: `${(numeric * filterScale).toFixed(1)}%` };
+      }
+
+      return item;
+    });
+  }, [activePersonaId, filterScale]);
+
   // Theme-based class definitions
   const isDark = theme === "dark";
   const bgMain = isDark
@@ -859,14 +1031,15 @@ export default function App() {
   const bgCard = isDark ? "bg-[#1e293b]" : "bg-white";
   const bgHeader = isDark
     ? "bg-[#0f172a]/95 border-slate-800"
-    : "bg-white/95 border-slate-200";
+    : "bg-white border-slate-200";
   const borderDivider = isDark ? "border-slate-800" : "border-slate-200";
   const textMuted = isDark ? "text-slate-400" : "text-slate-500";
   const textSubtle = isDark ? "text-slate-500" : "text-slate-400";
-  const bgHover = isDark ? "hover:bg-slate-800" : "hover:bg-slate-100";
+  const bgHover = isDark ? "hover:bg-slate-800 hover:text-slate-100" : "hover:bg-slate-100 hover:text-slate-900";
   const bgInput = isDark
     ? "bg-slate-800 border-slate-700 text-slate-100"
     : "bg-slate-50 border-slate-200 text-slate-900";
+  const navTabHover = isDark ? "hover:bg-slate-800/80 hover:text-slate-100" : "hover:bg-slate-100 hover:text-slate-900";
 
   // Persona Switch Handler
   const handlePersonaSwitch = (pId: PersonaId) => {
@@ -889,8 +1062,12 @@ export default function App() {
   const trajectoryData = useMemo(() => {
     const count =
       trajectoryRange === "3M" ? 3 : trajectoryRange === "6M" ? 6 : 12;
-    return MOCK_MONTHLY_TREND.slice(-count);
-  }, [trajectoryRange]);
+    return MOCK_MONTHLY_TREND.slice(-count).map((item) => ({
+      ...item,
+      apps: Math.round(item.apps * filterScale),
+      enrollments: Math.round(item.enrollments * filterScale),
+    }));
+  }, [trajectoryRange, filterScale]);
 
   // Genie response generator
   const handleSendGenie = (e?: React.FormEvent) => {
@@ -935,9 +1112,26 @@ export default function App() {
 
   // Filtered applicants
   const filteredApplicants = useMemo(() => {
-    if (!tableSearch) return MOCK_APPLICANTS_360;
+    let items = MOCK_APPLICANTS_360;
+
+    if (selectedFilters.campus !== "All Campuses") {
+      items = items.filter((a) => a.campus === selectedFilters.campus);
+    }
+
+    if (selectedFilters.university !== "All Universities") {
+      items = items.filter((a) => a.university === selectedFilters.university);
+    }
+
+    if (selectedFilters.institution !== "All Institutions") {
+      items = items.filter(
+        (a) => a.institution === selectedFilters.institution,
+      );
+    }
+
+    if (!tableSearch) return items;
+
     const query = tableSearch.toLowerCase();
-    return MOCK_APPLICANTS_360.filter(
+    return items.filter(
       (a) =>
         a.name.toLowerCase().includes(query) ||
         a.program.toLowerCase().includes(query) ||
@@ -945,7 +1139,7 @@ export default function App() {
         a.status.toLowerCase().includes(query) ||
         a.counselor.toLowerCase().includes(query),
     );
-  }, [tableSearch]);
+  }, [selectedFilters, tableSearch]);
 
   return (
     <div
@@ -955,7 +1149,7 @@ export default function App() {
       {/* 1. STICKY TOP HEADER */}
       {/* ========================================================================= */}
       <header
-        className={`sticky top-0 z-30 ${bgHeader} border-b backdrop-blur-md px-4 lg:px-6 py-2.5 transition-colors`}
+        className={`sticky top-0 z-30 ${bgHeader} border-b px-4 lg:px-6 py-2.5 transition-colors`}
       >
         <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-4">
           {/* Left Logo & Breadcrumb */}
@@ -972,7 +1166,7 @@ export default function App() {
 
           {/* Right Header Controls */}
           <div className="flex items-center gap-2 lg:gap-3">
-            {/* Search Input */}
+            {/* Search Input
             <div className="relative hidden md:block w-48 lg:w-60">
               <Search
                 className={`absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 ${textMuted}`}
@@ -983,17 +1177,17 @@ export default function App() {
                 className={`w-full pl-8 pr-3 py-1.5 text-xs rounded-md border ${bgInput} focus:outline-none focus:ring-1 focus:ring-indigo-500`}
               />
             </div>
+            */}
 
             {/* Intake Select */}
             <div className="relative">
               <select
                 defaultValue="July 2027 Intake"
-                className={`appearance-none pl-3 pr-7 py-1.5 rounded-md border ${bgInput} font-medium text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer`}
+                className={`appearance-none pl-3 pr-7 py-1.5 rounded-md border ${bgInput} font-medium text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer transition-colors`}
               >
                 <option value="July 2027 Intake">July 2027 Intake</option>
-                <option value="January 2027 Intake">January 2027 Intake</option>
                 <option value="January 2028 Intake">January 2028 Intake</option>
-                <option value="AY 2026-27">AY 2026-27</option>
+                <option value="January 2027 Intake">January 2027 Intake</option>
               </select>
               <ChevronDown
                 className={`absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${textMuted}`}
@@ -1003,7 +1197,7 @@ export default function App() {
             {/* Theme Toggle */}
             <button
               onClick={() => setTheme(isDark ? "light" : "dark")}
-              className={`p-1.5 rounded-md border ${borderDivider} ${bgHover} transition-colors`}
+              className={`p-1.5 rounded-md border ${borderDivider} ${bgHover} transition-colors duration-150`}
               title="Toggle Theme"
             >
               {isDark ? (
@@ -1015,10 +1209,16 @@ export default function App() {
 
             {/* Notifications */}
             <button
-              className={`p-1.5 rounded-md border ${borderDivider} ${bgHover} relative transition-colors`}
+              onClick={() => setIsAlertsOpen(!isAlertsOpen)}
+              className={`p-1.5 rounded-md border ${borderDivider} ${bgHover} relative transition-colors duration-150`}
+              aria-label="Open alerts"
             >
               <Bell className="w-4 h-4" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-indigo-500 rounded-full"></span>
+              {pendingAlertCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[1.1rem] h-5 px-1.5 rounded-full bg-indigo-500 text-[9px] font-semibold text-white flex items-center justify-center leading-none shadow-sm">
+                  {pendingAlertCount}
+                </span>
+              )}
             </button>
 
             {/* RBAC Persona Governance Dropdown */}
@@ -1146,14 +1346,66 @@ export default function App() {
             })}
           </div>
 
-          <div
-            className={`hidden lg:flex items-center gap-1.5 text-[11px] ${textMuted} shrink-0`}
-          >
-            <UserCheck className="w-3.5 h-3.5 text-indigo-500" />
-            <span>Role View:</span>
-            <span className="font-semibold text-indigo-400">
-              {currentPersona.name}
-            </span>
+          <div className="hidden xl:flex items-center gap-2 shrink-0">
+            <label className={`flex items-center gap-1.5 text-[11px] ${textMuted}`}>
+              <span>Institution</span>
+              <select
+                value={selectedFilters.institution}
+                onChange={(e) =>
+                  setSelectedFilters((prev) => ({
+                    ...prev,
+                    institution: e.target.value,
+                  }))
+                }
+                className={`rounded border ${bgInput} px-2 py-1 text-[10px] font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500`}
+              >
+                {FILTER_OPTIONS.institution.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className={`flex items-center gap-1.5 text-[11px] ${textMuted}`}>
+              <span>University</span>
+              <select
+                value={selectedFilters.university}
+                onChange={(e) =>
+                  setSelectedFilters((prev) => ({
+                    ...prev,
+                    university: e.target.value,
+                  }))
+                }
+                className={`rounded border ${bgInput} px-2 py-1 text-[10px] font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500`}
+              >
+                {FILTER_OPTIONS.university.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className={`flex items-center gap-1.5 text-[11px] ${textMuted}`}>
+              <span>Campus</span>
+              <select
+                value={selectedFilters.campus}
+                onChange={(e) =>
+                  setSelectedFilters((prev) => ({
+                    ...prev,
+                    campus: e.target.value,
+                  }))
+                }
+                className={`rounded border ${bgInput} px-2 py-1 text-[10px] font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500`}
+              >
+                {FILTER_OPTIONS.campus.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         </div>
       </nav>
@@ -1166,10 +1418,16 @@ export default function App() {
         {/* PERSONA-ADJUSTED KPI STRIP */}
         {/* ======================================================================= */}
         <section
-          className={`rounded-lg border ${borderDivider} ${bgCard} overflow-hidden shadow-xs`}
+          className={`rounded-lg border ${borderDivider} ${bgCard} overflow-hidden shadow-sm`}
         >
+          <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200/80 bg-slate-50/80 text-[10px] font-medium text-slate-600">
+            <span>Filtered view</span>
+            <span className="font-semibold text-slate-800">
+              {selectedFilters.institution} · {selectedFilters.university} · {selectedFilters.campus}
+            </span>
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 divide-y md:divide-y-0 md:divide-x divide-slate-200 dark:divide-slate-800">
-            {KPI_DATA[activePersonaId].map((kpi, idx) => (
+            {filteredKpiData.map((kpi, idx) => (
               <div key={idx} className="p-3.5 space-y-1">
                 <div
                   className={`text-[11px] font-medium ${textMuted} truncate`}
@@ -1891,13 +2149,95 @@ export default function App() {
         <span className="tracking-wide text-xs">Ask Genie +</span>
       </button>
 
+      {/* Notifications Drawer */}
+      {isAlertsOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div
+            onClick={() => setIsAlertsOpen(false)}
+            className="absolute inset-0 bg-slate-900/20 transition-opacity"
+          ></div>
+
+          <div
+            className={`relative w-full max-w-md ${bgCard} border-l ${borderDivider} shadow-2xl h-full flex flex-col z-10 transition-transform duration-200`}
+          >
+            <div className={`p-4 border-b ${borderDivider} flex items-center justify-between ${isDark ? "bg-slate-900/50" : "bg-slate-50"}`}>
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded bg-indigo-600 flex items-center justify-center text-white">
+                  <Bell className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <div className="font-bold text-xs">Pending Alerts</div>
+                  <div className={`text-[10px] ${textMuted}`}>
+                    {pendingAlertCount} items awaiting review
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setIsAlertsOpen(false)} className={`p-1 rounded ${bgHover}`}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              {alerts.map((alert) => {
+                const isExpanded = expandedAlertId === alert.id;
+                const isHigh = alert.severity === "high";
+                const isMedium = alert.severity === "medium";
+                return (
+                  <div
+                    key={alert.id}
+                    className={`rounded-lg border ${borderDivider} ${isDark ? "bg-slate-900/30" : "bg-slate-50"} overflow-hidden`}
+                  >
+                    <button
+                      onClick={() => setExpandedAlertId(isExpanded ? null : alert.id)}
+                      className="w-full text-left p-3 flex items-start justify-between gap-3"
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className={`mt-1 inline-flex h-2.5 w-2.5 rounded-full ${isHigh ? "bg-rose-500" : isMedium ? "bg-amber-500" : "bg-emerald-500"}`}></span>
+                        <div>
+                          <div className="font-semibold text-xs">{alert.title}</div>
+                          <div className={`text-[10px] ${textMuted} mt-1`}>{alert.message}</div>
+                        </div>
+                      </div>
+                      <span className={`text-[10px] ${textMuted}`}>{alert.time}</span>
+                    </button>
+
+                    {isExpanded && (
+                      <div className={`border-t ${borderDivider} p-3 space-y-3 text-[11px]`}>
+                        <div className={`rounded-md border ${borderDivider} p-2 ${isDark ? "bg-slate-800/40" : "bg-white"}`}>
+                          {alert.details}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {alert.actions.map((action) => (
+                            <button
+                              key={action}
+                              className={`px-2 py-1 rounded border ${borderDivider} ${bgHover} text-[10px] font-medium`}
+                              onClick={() => setAlerts((prev) => prev.map((item) => item.id === alert.id ? { ...item, acknowledged: true } : item))}
+                            >
+                              {action}
+                            </button>
+                          ))}
+                        </div>
+                        <div className={`flex items-center justify-between text-[10px] ${textMuted}`}>
+                          <span>Severity: {alert.severity}</span>
+                          <span>{alert.acknowledged ? "Acknowledged" : "Pending"}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Drawer Overlay */}
       {isGenieOpen && (
         <div className="fixed inset-0 z-50 flex justify-end">
           {/* Backdrop */}
           <div
             onClick={() => setIsGenieOpen(false)}
-            className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200"
+            className="absolute inset-0 bg-slate-900/40 transition-opacity"
           ></div>
 
           {/* Slide-over Content Drawer */}
