@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useContext } from "react";
 import {
   Database,
   Search,
@@ -619,6 +619,29 @@ export const FILTER_OPTIONS = {
   ],
 };
 
+type SelectedFilters = {
+  institution: string;
+  university: string;
+  campus: string;
+};
+
+type DashboardScope = {
+  scopeFactor: number;
+  selectedFilters: SelectedFilters;
+};
+
+const DashboardScopeContext = React.createContext<DashboardScope>({
+  scopeFactor: 1,
+  selectedFilters: {
+    institution: "All Institutions",
+    university: "All Universities",
+    campus: "All Campuses",
+  },
+});
+
+const scaleCount = (value: number, factor: number) =>
+  Math.round(value * factor);
+
 export interface AlertItem {
   id: number;
   title: string;
@@ -922,11 +945,12 @@ export default function App() {
   const [isPersonaMenuOpen, setIsPersonaMenuOpen] = useState<boolean>(false);
   // Active Tab state
   const [activeTab, setActiveTab] = useState<TabId>("overview");
-  const [selectedFilters, setSelectedFilters] = useState({
+  const [selectedFilters, setSelectedFilters] = useState<SelectedFilters>({
     institution: "All Institutions",
     university: "All Universities",
     campus: "All Campuses",
   });
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [isAlertsOpen, setIsAlertsOpen] = useState<boolean>(false);
   const [expandedAlertId, setExpandedAlertId] = useState<number | null>(1);
   const [alerts, setAlerts] = useState<AlertItem[]>(ALERT_ITEMS);
@@ -956,72 +980,47 @@ export default function App() {
   );
 
   const pendingAlertCount = alerts.filter((alert) => !alert.acknowledged).length;
+  const activeFilterCount = Object.values(selectedFilters).filter(
+    (value) => !value.startsWith("All "),
+  ).length;
 
-  const filterScale = useMemo(() => {
-    const institutionFactor =
-      selectedFilters.institution === "All Institutions"
-        ? 1
-        : selectedFilters.institution === "Global Education Group"
-          ? 1.08
-          : selectedFilters.institution === "North India University"
-            ? 0.92
-            : 1.04;
-
-    const universityFactor =
-      selectedFilters.university === "All Universities"
-        ? 1
-        : selectedFilters.university === "Bharath Institute"
-          ? 1.06
-          : selectedFilters.university === "SRM Academic Network"
-            ? 0.96
-            : 1.02;
-
-    const campusFactor =
-      selectedFilters.campus === "All Campuses"
-        ? 1
-        : selectedFilters.campus === "Bengaluru"
-          ? 1.08
-          : selectedFilters.campus === "Mysuru"
-            ? 0.96
-            : selectedFilters.campus === "Mangalore"
-              ? 0.93
-              : 1.02;
-
-    return institutionFactor * universityFactor * campusFactor;
+  const scopedApplicants = useMemo(() => {
+    return MOCK_APPLICANTS_360.filter((applicant) =>
+      (selectedFilters.institution === "All Institutions" ||
+        applicant.institution === selectedFilters.institution) &&
+      (selectedFilters.university === "All Universities" ||
+        applicant.university === selectedFilters.university) &&
+      (selectedFilters.campus === "All Campuses" ||
+        applicant.campus === selectedFilters.campus),
+    );
   }, [selectedFilters]);
+
+  const scopeFactor = scopedApplicants.length / MOCK_APPLICANTS_360.length;
 
   const filteredKpiData = useMemo(() => {
     return KPI_DATA[activePersonaId].map((item) => {
       const numeric = Number.parseFloat(item.value.replace(/[^\d.]/g, ""));
-      if (Number.isNaN(numeric)) return item;
-
-      const scaledValue = numeric * filterScale;
-      const label = item.label.toLowerCase();
-
-      if (label.includes("applications") || label.includes("enrollments") || label.includes("managed") || label.includes("reviews") || label.includes("capacity") || label.includes("seats") || label.includes("students")) {
-        return {
-          ...item,
-          value: item.label.includes("Revenue")
-            ? `₹${Math.round(scaledValue)}M`
-            : item.label.includes("Enrollment Yield") || item.label.includes("Seat Utilization") || item.label.includes("Conversion") || item.label.includes("Yield") || item.label.includes("Utilization")
-              ? `${(numeric * filterScale).toFixed(1)}%`
-              : item.label.includes("Top Program") || item.label.includes("Program") || item.label.includes("Intake") || item.label.includes("Target") || item.label.includes("Status")
-                ? item.value
-                : new Intl.NumberFormat("en-IN").format(Math.round(scaledValue)),
-        };
+      if (item.value.includes("%") && scopeFactor === 0) {
+        return { ...item, value: "0.0%" };
+      }
+      if (
+        Number.isNaN(numeric) ||
+        item.value.includes("%") ||
+        item.label.includes("Score")
+      ) {
+        return item;
       }
 
-      if (item.label.includes("Revenue")) {
-        return { ...item, value: `₹${Math.round(scaledValue)}M` };
-      }
+      const scaled = scaleCount(numeric, scopeFactor);
+      const value = item.value.startsWith("₹")
+        ? `₹${scaled}M`
+        : item.value.includes("Seats")
+          ? `${new Intl.NumberFormat("en-IN").format(scaled)} Seats`
+          : new Intl.NumberFormat("en-IN").format(scaled);
 
-      if (item.label.includes("Yield") || item.label.includes("Utilization") || item.label.includes("Conversion") || item.label.includes("Rate")) {
-        return { ...item, value: `${(numeric * filterScale).toFixed(1)}%` };
-      }
-
-      return item;
+      return { ...item, value };
     });
-  }, [activePersonaId, filterScale]);
+  }, [activePersonaId, scopeFactor]);
 
   // Theme-based class definitions
   const isDark = theme === "dark";
@@ -1064,10 +1063,10 @@ export default function App() {
       trajectoryRange === "3M" ? 3 : trajectoryRange === "6M" ? 6 : 12;
     return MOCK_MONTHLY_TREND.slice(-count).map((item) => ({
       ...item,
-      apps: Math.round(item.apps * filterScale),
-      enrollments: Math.round(item.enrollments * filterScale),
+      apps: scaleCount(item.apps, scopeFactor),
+      enrollments: scaleCount(item.enrollments, scopeFactor),
     }));
-  }, [trajectoryRange, filterScale]);
+  }, [trajectoryRange, scopeFactor]);
 
   // Genie response generator
   const handleSendGenie = (e?: React.FormEvent) => {
@@ -1112,26 +1111,10 @@ export default function App() {
 
   // Filtered applicants
   const filteredApplicants = useMemo(() => {
-    let items = MOCK_APPLICANTS_360;
-
-    if (selectedFilters.campus !== "All Campuses") {
-      items = items.filter((a) => a.campus === selectedFilters.campus);
-    }
-
-    if (selectedFilters.university !== "All Universities") {
-      items = items.filter((a) => a.university === selectedFilters.university);
-    }
-
-    if (selectedFilters.institution !== "All Institutions") {
-      items = items.filter(
-        (a) => a.institution === selectedFilters.institution,
-      );
-    }
-
-    if (!tableSearch) return items;
+    if (!tableSearch) return scopedApplicants;
 
     const query = tableSearch.toLowerCase();
-    return items.filter(
+    return scopedApplicants.filter(
       (a) =>
         a.name.toLowerCase().includes(query) ||
         a.program.toLowerCase().includes(query) ||
@@ -1139,9 +1122,10 @@ export default function App() {
         a.status.toLowerCase().includes(query) ||
         a.counselor.toLowerCase().includes(query),
     );
-  }, [selectedFilters, tableSearch]);
+  }, [scopedApplicants, tableSearch]);
 
   return (
+    <DashboardScopeContext.Provider value={{ scopeFactor, selectedFilters }}>
     <div
       className={`min-h-screen ${bgMain} font-sans text-xs transition-colors duration-200 antialiased`}
     >
@@ -1332,12 +1316,14 @@ export default function App() {
                 <button
                   key={tabId}
                   onClick={() => setActiveTab(tabId)}
-                  className={`px-3 py-1.5 text-xs font-medium whitespace-nowrap rounded-t-md border-b-2 transition-all ${
+                  className={`px-3 py-1.5 text-xs font-medium whitespace-nowrap rounded-md border-b-2 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                     isActive
                       ? isDark
                         ? "border-indigo-400 text-indigo-400 font-semibold"
                         : "border-slate-900 text-slate-900 font-semibold"
-                      : `border-transparent ${textMuted} hover:text-slate-200`
+                      : isDark
+                        ? "border-transparent text-slate-400 hover:bg-slate-800/70 hover:text-slate-100"
+                        : "border-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                   }`}
                 >
                   {TAB_LABELS[tabId]}
@@ -1346,66 +1332,58 @@ export default function App() {
             })}
           </div>
 
-          <div className="hidden xl:flex items-center gap-2 shrink-0">
-            <label className={`flex items-center gap-1.5 text-[11px] ${textMuted}`}>
-              <span>Institution</span>
-              <select
-                value={selectedFilters.institution}
-                onChange={(e) =>
-                  setSelectedFilters((prev) => ({
-                    ...prev,
-                    institution: e.target.value,
-                  }))
-                }
-                className={`rounded border ${bgInput} px-2 py-1 text-[10px] font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500`}
-              >
-                {FILTER_OPTIONS.institution.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsFiltersOpen((open) => !open)}
+              aria-expanded={isFiltersOpen}
+              aria-haspopup="true"
+              className={`flex items-center gap-1.5 rounded-md border ${borderDivider} ${bgHover} px-2.5 py-1.5 text-[11px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500`}
+            >
+              <Filter className="h-3.5 w-3.5" />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-[9px] font-semibold text-white">
+                  {activeFilterCount}
+                </span>
+              )}
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isFiltersOpen ? "rotate-180" : ""}`} />
+            </button>
 
-            <label className={`flex items-center gap-1.5 text-[11px] ${textMuted}`}>
-              <span>University</span>
-              <select
-                value={selectedFilters.university}
-                onChange={(e) =>
-                  setSelectedFilters((prev) => ({
-                    ...prev,
-                    university: e.target.value,
-                  }))
-                }
-                className={`rounded border ${bgInput} px-2 py-1 text-[10px] font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500`}
-              >
-                {FILTER_OPTIONS.university.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className={`flex items-center gap-1.5 text-[11px] ${textMuted}`}>
-              <span>Campus</span>
-              <select
-                value={selectedFilters.campus}
-                onChange={(e) =>
-                  setSelectedFilters((prev) => ({
-                    ...prev,
-                    campus: e.target.value,
-                  }))
-                }
-                className={`rounded border ${bgInput} px-2 py-1 text-[10px] font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500`}
-              >
-                {FILTER_OPTIONS.campus.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {isFiltersOpen && (
+              <div className={`absolute right-0 top-full z-40 mt-2 w-72 rounded-lg border ${borderDivider} ${bgCard} p-3 shadow-xl`}>
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="text-xs font-semibold">Organization filters</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFilters({
+                      institution: "All Institutions",
+                      university: "All Universities",
+                      campus: "All Campuses",
+                    })}
+                    className={`text-[10px] font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300`}
+                  >
+                    Reset
+                  </button>
+                </div>
+                <div className="space-y-2.5">
+                  {(["institution", "university", "campus"] as const).map((filter) => (
+                    <label key={filter} className="block space-y-1">
+                      <span className={`block text-[10px] font-medium capitalize ${textMuted}`}>{filter}</span>
+                      <select
+                        value={selectedFilters[filter]}
+                        onChange={(e) => setSelectedFilters((prev) => ({ ...prev, [filter]: e.target.value }))}
+                        className={`w-full rounded-md border ${bgInput} px-2.5 py-2 text-[11px] focus:outline-none focus:ring-2 focus:ring-indigo-500`}
+                      >
+                        {FILTER_OPTIONS[filter].map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </nav>
@@ -1420,12 +1398,6 @@ export default function App() {
         <section
           className={`rounded-lg border ${borderDivider} ${bgCard} overflow-hidden shadow-sm`}
         >
-          <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200/80 bg-slate-50/80 text-[10px] font-medium text-slate-600">
-            <span>Filtered view</span>
-            <span className="font-semibold text-slate-800">
-              {selectedFilters.institution} · {selectedFilters.university} · {selectedFilters.campus}
-            </span>
-          </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 divide-y md:divide-y-0 md:divide-x divide-slate-200 dark:divide-slate-800">
             {filteredKpiData.map((kpi, idx) => (
               <div key={idx} className="p-3.5 space-y-1">
@@ -1601,7 +1573,7 @@ export default function App() {
                   <div className="space-y-1">
                     <div className="flex justify-between text-xs">
                       <span>Application Fee Paid</span>
-                      <span className="font-semibold">13,796 (92.0%)</span>
+                      <span className="font-semibold">{scaleCount(13796, scopeFactor).toLocaleString("en-IN")} (92.0%)</span>
                     </div>
                     <div className="w-full bg-slate-200 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden">
                       <div
@@ -1615,7 +1587,7 @@ export default function App() {
                     <div className="flex justify-between text-xs">
                       <span>Unpaid / Abandoned</span>
                       <span className="font-semibold text-rose-400">
-                        1,204 (8.0%)
+                        {scaleCount(1204, scopeFactor).toLocaleString("en-IN")} (8.0%)
                       </span>
                     </div>
                     <div className="w-full bg-slate-200 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden">
@@ -1629,7 +1601,7 @@ export default function App() {
                 <div
                   className={`pt-3 border-t ${borderDivider} text-[11px] ${textMuted}`}
                 >
-                  // bind: vw_paid_vs_unpaid_applications · 13,796 total
+                  // bind: vw_paid_vs_unpaid_applications · {scaleCount(13796, scopeFactor).toLocaleString("en-IN")} total
                   payments received
                 </div>
               </div>
@@ -1677,23 +1649,23 @@ export default function App() {
                     </div>
                   </div>
                   <span className="text-xs font-semibold px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400">
-                    ₹175M Total
+                    ₹{scaleCount(175, scopeFactor)}M Total
                   </span>
                 </div>
 
                 <div className="space-y-3">
                   {[
-                    { name: "B.Tech CS & AI", rev: "₹75.4M", pct: 43 },
-                    { name: "MBA Programs", rev: "₹48.2M", pct: 27 },
-                    { name: "MBBS Medicine", rev: "₹32.1M", pct: 18 },
-                    { name: "BBA Digital Business", rev: "₹12.5M", pct: 7 },
-                    { name: "Other Specializations", rev: "₹6.8M", pct: 5 },
+                    { name: "B.Tech CS & AI", rev: 75.4, pct: 43 },
+                    { name: "MBA Programs", rev: 48.2, pct: 27 },
+                    { name: "MBBS Medicine", rev: 32.1, pct: 18 },
+                    { name: "BBA Digital Business", rev: 12.5, pct: 7 },
+                    { name: "Other Specializations", rev: 6.8, pct: 5 },
                   ].map((p, i) => (
                     <div key={i} className="space-y-1">
                       <div className="flex justify-between text-xs">
                         <span>{p.name}</span>
                         <span className="font-semibold">
-                          {p.rev} ({p.pct}%)
+                          ₹{(p.rev * scopeFactor).toFixed(1)}M ({p.pct}%)
                         </span>
                       </div>
                       <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
@@ -1883,7 +1855,7 @@ export default function App() {
                     </div>
                   </div>
                   <span className="text-xs font-semibold px-2 py-0.5 rounded bg-violet-500/10 text-violet-400">
-                    100k Total
+                    {scaleCount(100000, scopeFactor).toLocaleString("en-IN")} Total
                   </span>
                 </div>
 
@@ -1893,7 +1865,7 @@ export default function App() {
                       Email Communications
                     </div>
                     <div className="text-lg font-bold">
-                      64,200{" "}
+                      {scaleCount(64200, scopeFactor).toLocaleString("en-IN")} {" "}
                       <span className="text-xs font-normal text-emerald-400">
                         (64.2%)
                       </span>
@@ -1905,7 +1877,7 @@ export default function App() {
                       WhatsApp Outreach
                     </div>
                     <div className="text-lg font-bold">
-                      25,800{" "}
+                      {scaleCount(25800, scopeFactor).toLocaleString("en-IN")} {" "}
                       <span className="text-xs font-normal text-indigo-400">
                         (25.8%)
                       </span>
@@ -1917,7 +1889,7 @@ export default function App() {
                       Direct Phone Calls
                     </div>
                     <div className="text-lg font-bold">
-                      10,000{" "}
+                      {scaleCount(10000, scopeFactor).toLocaleString("en-IN")} {" "}
                       <span className="text-xs font-normal text-amber-400">
                         (10.0%)
                       </span>
@@ -1993,12 +1965,12 @@ export default function App() {
                     { city: "Hyderabad", count: 1050, pct: 7.0 },
                     { city: "Kochi", count: 890, pct: 5.9 },
                     { city: "Mangalore", count: 750, pct: 5.0 },
-                  ].map((c, i) => (
+                  ].filter((city) => selectedFilters.campus === "All Campuses" || city.city === selectedFilters.campus).map((c, i) => (
                     <div key={i} className="space-y-1">
                       <div className="flex justify-between text-xs">
                         <span>{c.city}</span>
                         <span className="font-semibold">
-                          {c.count} ({c.pct}%)
+                          {scaleCount(c.count, scopeFactor).toLocaleString("en-IN")} ({c.pct}%)
                         </span>
                       </div>
                       <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
@@ -2127,7 +2099,7 @@ export default function App() {
                 className={`pt-3 border-t ${borderDivider} flex items-center justify-between text-[11px] ${textMuted}`}
               >
                 <span>
-                  Showing {filteredApplicants.length} of 15,000 records
+                  Showing {filteredApplicants.length} of {scaleCount(15000, scopeFactor).toLocaleString("en-IN")} records
                 </span>
                 <span>// bind: vw_applicant_360</span>
               </div>
@@ -2323,6 +2295,7 @@ export default function App() {
         </div>
       )}
     </div>
+    </DashboardScopeContext.Provider>
   );
 }
 
@@ -2332,6 +2305,8 @@ export default function App() {
 
 // Widget A: Funnel Variance Card
 function FunnelVarianceCard({ isDark, borderDivider, bgCard, textMuted }: any) {
+  const { scopeFactor } = useContext(DashboardScopeContext);
+
   return (
     <div
       className={`rounded-lg border ${borderDivider} ${bgCard} p-5 space-y-4`}
@@ -2362,11 +2337,11 @@ function FunnelVarianceCard({ isDark, borderDivider, bgCard, textMuted }: any) {
               <span className="font-medium">{item.stage}</span>
               <div className="space-x-1.5">
                 <span className="font-mono font-semibold">
-                  {item.actual.toLocaleString()}
+                  {scaleCount(item.actual, scopeFactor).toLocaleString("en-IN")}
                 </span>
-                {item.variance > 0 && (
+                {scaleCount(item.variance, scopeFactor) > 0 && (
                   <span className="text-emerald-500 text-[10px] font-bold">
-                    (+{item.variance})
+                    (+{scaleCount(item.variance, scopeFactor)})
                   </span>
                 )}
               </div>
@@ -2403,7 +2378,8 @@ function FunnelVarianceCard({ isDark, borderDivider, bgCard, textMuted }: any) {
 
 // Widget B: Stage Dropoff Ladder
 function StageDropoffCard({ isDark, borderDivider, bgCard, textMuted }: any) {
-  const maxCount = 15000;
+  const { scopeFactor } = useContext(DashboardScopeContext);
+  const maxCount = Math.max(1, scaleCount(15000, scopeFactor));
   return (
     <div
       className={`rounded-lg border ${borderDivider} ${bgCard} p-5 space-y-4`}
@@ -2422,14 +2398,15 @@ function StageDropoffCard({ isDark, borderDivider, bgCard, textMuted }: any) {
 
       <div className="space-y-2.5">
         {MOCK_STAGE_DROPOFF.map((stage, i) => {
-          const widthPct = (stage.count / maxCount) * 100;
+          const scopedCount = scaleCount(stage.count, scopeFactor);
+          const widthPct = (scopedCount / maxCount) * 100;
           return (
             <div key={i} className="space-y-1">
               <div className="flex justify-between text-xs">
                 <span>{stage.stage}</span>
                 <div className="space-x-2">
                   <span className="font-mono">
-                    {stage.count.toLocaleString()}
+                    {scopedCount.toLocaleString("en-IN")}
                   </span>
                   <span className="text-[10px] text-slate-400 font-semibold">
                     ({stage.conversion}%)
@@ -2646,6 +2623,8 @@ function CapacityUtilizationCard({
   bgCard,
   textMuted,
 }: any) {
+  const { scopeFactor } = useContext(DashboardScopeContext);
+
   return (
     <div
       className={`rounded-lg border ${borderDivider} ${bgCard} p-5 space-y-4`}
@@ -2682,7 +2661,7 @@ function CapacityUtilizationCard({
                 <span className="font-medium">{item.name}</span>
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-[11px]">
-                    {item.allocated}/{item.capacity} ({item.pct.toFixed(1)}%)
+                    {scaleCount(item.allocated, scopeFactor)}/{scaleCount(item.capacity, scopeFactor)} ({item.pct.toFixed(1)}%)
                   </span>
                   <span
                     className={`text-[9px] px-1.5 py-0.5 rounded font-semibold ${chipColor}`}
@@ -2719,6 +2698,8 @@ function RevenueWaterfallCard({
   bgCard,
   textMuted,
 }: any) {
+  const { scopeFactor } = useContext(DashboardScopeContext);
+
   return (
     <div
       className={`rounded-lg border ${borderDivider} ${bgCard} p-5 space-y-4`}
@@ -2731,7 +2712,7 @@ function RevenueWaterfallCard({
           </div>
         </div>
         <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400">
-          ₹175M Total
+          ₹{scaleCount(175, scopeFactor)}M Total
         </span>
       </div>
 
@@ -2750,7 +2731,11 @@ function RevenueWaterfallCard({
               className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end"
             >
               <span className="text-[10px] font-mono font-bold">
-                {bar.display}
+                {bar.type === "base"
+                  ? bar.display
+                  : bar.type === "total"
+                    ? `₹${scaleCount(175, scopeFactor)}M`
+                    : `+₹${(bar.amount * scopeFactor).toFixed(1)}M`}
               </span>
               <div
                 className={`w-full rounded-t ${
@@ -2773,7 +2758,7 @@ function RevenueWaterfallCard({
       <div
         className={`pt-3 border-t ${borderDivider} flex items-center justify-between text-[11px] ${textMuted}`}
       >
-        <span>18,200 total transactions</span>
+        <span>{scaleCount(18200, scopeFactor).toLocaleString("en-IN")} total transactions</span>
         <span>Avg payment: ₹9,615</span>
       </div>
     </div>
@@ -2782,6 +2767,8 @@ function RevenueWaterfallCard({
 
 // Widget E: State Benchmark Card
 function StateBenchmarkCard({ isDark, borderDivider, bgCard, textMuted }: any) {
+  const { scopeFactor } = useContext(DashboardScopeContext);
+
   return (
     <div
       className={`rounded-lg border ${borderDivider} ${bgCard} p-5 space-y-4`}
@@ -2804,7 +2791,7 @@ function StateBenchmarkCard({ isDark, borderDivider, bgCard, textMuted }: any) {
             <div className="flex justify-between text-xs">
               <span>{st.state}</span>
               <span className="font-mono font-semibold">
-                {st.count.toLocaleString()} ({st.pct}%)
+                {scaleCount(st.count, scopeFactor).toLocaleString("en-IN")} ({st.pct}%)
               </span>
             </div>
             <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
@@ -2834,6 +2821,8 @@ function IntakeComparisonCard({
   bgCard,
   textMuted,
 }: any) {
+  const { scopeFactor } = useContext(DashboardScopeContext);
+
   return (
     <div
       className={`rounded-lg border ${borderDivider} ${bgCard} p-5 space-y-4`}
@@ -2863,13 +2852,13 @@ function IntakeComparisonCard({
               <div className="flex justify-between text-[11px]">
                 <span className={textMuted}>Applications</span>
                 <span className="font-mono font-semibold">
-                  {item.apps.toLocaleString()}
+                  {scaleCount(item.apps, scopeFactor).toLocaleString("en-IN")}
                 </span>
               </div>
               <div className="flex justify-between text-[11px]">
                 <span className={textMuted}>Enrolled</span>
                 <span className="font-mono font-semibold">
-                  {item.enrolled.toLocaleString()}
+                  {scaleCount(item.enrolled, scopeFactor).toLocaleString("en-IN")}
                 </span>
               </div>
             </div>
@@ -2900,6 +2889,8 @@ function CounselorLeaderboardCard({
   bgCard,
   textMuted,
 }: any) {
+  const { scopeFactor } = useContext(DashboardScopeContext);
+
   return (
     <div
       className={`rounded-lg border ${borderDivider} ${bgCard} p-5 space-y-4`}
@@ -2912,7 +2903,7 @@ function CounselorLeaderboardCard({
           </div>
         </div>
         <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400">
-          70 Active
+          {scaleCount(70, scopeFactor)} Active
         </span>
       </div>
 
@@ -2929,14 +2920,14 @@ function CounselorLeaderboardCard({
               <div>
                 <div className="font-semibold">{c.name}</div>
                 <div className={`text-[10px] ${textMuted}`}>
-                  {c.apps} apps managed
+                  {scaleCount(c.apps, scopeFactor)} apps managed
                 </div>
               </div>
             </div>
 
             <div className="flex items-center gap-3">
               <div className="text-right">
-                <div className="font-mono font-bold">{c.enrolled} Enrolled</div>
+                <div className="font-mono font-bold">{scaleCount(c.enrolled, scopeFactor)} Enrolled</div>
                 <div className="text-[10px] text-emerald-400 font-semibold">
                   {c.conversion}% conv
                 </div>
@@ -2967,6 +2958,8 @@ function ReviewerProductivityCard({
   bgCard,
   textMuted,
 }: any) {
+  const { scopeFactor } = useContext(DashboardScopeContext);
+
   return (
     <div
       className={`rounded-lg border ${borderDivider} ${bgCard} p-5 space-y-4`}
@@ -2979,7 +2972,7 @@ function ReviewerProductivityCard({
           </div>
         </div>
         <span className="text-xs font-semibold px-2 py-0.5 rounded bg-amber-500/10 text-amber-400">
-          35 Reviewers
+          {scaleCount(35, scopeFactor)} Reviewers
         </span>
       </div>
 
@@ -2991,11 +2984,11 @@ function ReviewerProductivityCard({
               <div className="w-32 bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
                 <div
                   className="bg-amber-500 h-full rounded-full"
-                  style={{ width: `${(rev.reviews / 320) * 100}%` }}
+                  style={{ width: `${(scaleCount(rev.reviews, scopeFactor) / 320) * 100}%` }}
                 ></div>
               </div>
               <span className="font-mono font-bold w-8 text-right">
-                {rev.reviews}
+                {scaleCount(rev.reviews, scopeFactor)}
               </span>
             </div>
           </div>
@@ -3018,6 +3011,13 @@ function VerificationAuditCard({
   bgCard,
   textMuted,
 }: any) {
+  const { scopeFactor, selectedFilters } = useContext(DashboardScopeContext);
+  const auditRows = MOCK_VERIFICATION_AUDIT.filter(
+    (campus) =>
+      selectedFilters.campus === "All Campuses" ||
+      campus.campus === selectedFilters.campus,
+  );
+
   return (
     <div
       className={`rounded-lg border ${borderDivider} ${bgCard} p-5 space-y-4`}
@@ -3035,7 +3035,7 @@ function VerificationAuditCard({
       </div>
 
       <div className="space-y-3">
-        {MOCK_VERIFICATION_AUDIT.map((camp, i) => (
+        {auditRows.map((camp, i) => (
           <div
             key={i}
             className="p-3 rounded-md bg-slate-800/30 border border-slate-700/50 space-y-1.5"
@@ -3047,9 +3047,9 @@ function VerificationAuditCard({
               </span>
             </div>
             <div className="flex justify-between text-[11px] text-slate-400">
-              <span>Verified: {camp.verified.toLocaleString()}</span>
+              <span>Verified: {scaleCount(camp.verified, scopeFactor).toLocaleString("en-IN")}</span>
               <span className="text-amber-400 font-medium">
-                Pending: {camp.pending}
+                Pending: {scaleCount(camp.pending, scopeFactor)}
               </span>
             </div>
           </div>
@@ -3067,6 +3067,8 @@ function VerificationAuditCard({
 
 // Widget K: Program Demand Card
 function ProgramDemandCard({ isDark, borderDivider, bgCard, textMuted }: any) {
+  const { scopeFactor } = useContext(DashboardScopeContext);
+
   return (
     <div
       className={`rounded-lg border ${borderDivider} ${bgCard} p-5 space-y-4`}
@@ -3086,7 +3088,7 @@ function ProgramDemandCard({ isDark, borderDivider, bgCard, textMuted }: any) {
             <div className="flex justify-between text-xs">
               <span className="truncate max-w-[180px]">{prog.name}</span>
               <span className="font-mono font-semibold">
-                {prog.apps.toLocaleString()} ({prog.pct}%)
+                {scaleCount(prog.apps, scopeFactor).toLocaleString("en-IN")} ({prog.pct}%)
               </span>
             </div>
             <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
