@@ -964,10 +964,8 @@ export default function App() {
               <Database className="w-4 h-4" />
             </div>
             <div className="flex items-center gap-1.5 font-mono text-[11px] tracking-tight">
-              <span className={textMuted}>databricks</span>
-              <span className={textMuted}>/</span>
               <span className="font-semibold text-indigo-500">
-                admissions-governance
+                Higher Education Admissions Analytics
               </span>
             </div>
           </div>
@@ -1051,9 +1049,7 @@ export default function App() {
                     <div className="flex items-center gap-2">
                       <Shield className="w-4 h-4 text-indigo-500" />
                       <div>
-                        <div className="font-bold text-xs">
-                          RBAC Persona Governance
-                        </div>
+                        <div className="font-bold text-xs">Select Your Role</div>
                         <div className={`text-[10px] ${textSubtle}`}>
                           Switch persona to test role-based view
                         </div>
